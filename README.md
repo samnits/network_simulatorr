@@ -55,11 +55,19 @@ pip install -r requirements.txt
 source venv/bin/activate  # On Linux/Mac
 venv\Scripts\activate  # On Windows
 ```
-3. Run the simulator:
+3. Initialize a Git repository and push to GitHub:
+```
+git init
+git remote add origin https://github.com/samnits/network_simulatorr.git
+git add .
+git commit -m "initial commit"
+git push -u origin main
+```
+4. Run the simulator:
 ```
 python main.py
 ```
-4. Run test cases:
+5. Run test cases:
 ```
 pytest tests/
 ```
