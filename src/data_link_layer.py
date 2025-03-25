@@ -1,23 +1,30 @@
-# src/data_link_layer.py
 import random
-
 class Switch:
     def __init__(self, name):
         self.name = name
         self.mac_table = {}
 
     def connect(self, device, mac_address):
-        self.mac_table[mac_address] = device
+        self.mac_table[mac_address] = device  # Ensure correct mapping
+        print(f"{device.name} with MAC {mac_address} connected to {self.name}")
 
     def forward_frame(self, source_mac, dest_mac, data):
-        if dest_mac in self.mac_table:
+        # Learn the source MAC address
+        if source_mac not in self.mac_table:
+            print(f"Learning MAC address {source_mac}")
+            self.mac_table[source_mac] = self.mac_table.get(source_mac)
+
+        # Forward frame if destination MAC is known
+        if dest_mac in self.mac_table and self.mac_table[dest_mac] is not None:
             print(f"Switch forwarding data from {source_mac} to {dest_mac}")
             self.mac_table[dest_mac].receive_data(data)
         else:
+            # Broadcast if destination is unknown
             print(f"Broadcasting data since {dest_mac} is unknown")
             for device in self.mac_table.values():
-                if device.mac_address != source_mac:
+                if device is not None and device.mac_address != source_mac:  # Avoid broadcasting to None
                     device.receive_data(data)
+
 
 class Bridge:
     def __init__(self, name):

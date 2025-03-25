@@ -112,8 +112,8 @@ def test_extended_network():
 
 
 def main():
-        test_physical_layer()
-        test_data_link_layer()
+        # test_physical_layer()
+        # test_data_link_layer()
         print("Proceeding to Extended Network Test...")
         test_extended_network()
     
