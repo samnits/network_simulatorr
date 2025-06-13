@@ -2,15 +2,19 @@
 import networkx as nx
 import matplotlib.pyplot as plt
 import random
+import time
 import ipaddress
-from src.physical_layer import EndDevice, Hub, Connection
-from src.data_link_layer import Switch, Device, parity_check, csma_cd, sliding_window
-from src.network_layer import Router, NetworkDevice, IPPacket, ARP, RIP, OSPF
+import threading
 
+from physical_layer import EndDevice, Hub, Connection
+from data_link_layer import Switch, Device, parity_check, csma_cd, sliding_window
+from network_layer import Router, NetworkDevice, IPPacket, ARP, RIP, OSPF
+from transport_layer import TransportLayer, GoBackNProtocol, SelectiveRepeatProtocol
+from application_layer import ApplicationLayer
 class Network:
     """Network class to manage all devices"""
     def __init__(self):
-        self.devices = []
+        self.devices = [] 
     
     def add_device(self, device):
         self.devices.append(device)
@@ -227,8 +231,8 @@ def test_network_layer():
     
     print("Network Layer Static Routing Test Completed")
 
-def test_dynamic_routing():
-    print("\n--- Testing Dynamic Routing (RIP) ---")
+def test_ospf_routing():
+    print("\n--- Testing OSPF Dynamic Routing ---")
     network = Network()
     
     # Create routers
@@ -242,33 +246,39 @@ def test_dynamic_routing():
     network.add_device(router3)
     network.add_device(router4)
     
-    # Create network devices (hosts)
+    # Create hosts
     host1 = NetworkDevice("Host1", "AA:BB:CC:11:11:11")
     host2 = NetworkDevice("Host2", "AA:BB:CC:22:22:22")
+    host3 = NetworkDevice("Host3", "AA:BB:CC:33:33:33")
+    host4 = NetworkDevice("Host4", "AA:BB:CC:44:44:44")
     
     network.add_device(host1)
     network.add_device(host2)
+    network.add_device(host3)
+    network.add_device(host4)
     
-    # Configure router interfaces
-    router1.add_interface("eth0", "10.0.1.1/24", "AA:BB:CC:01:01:01")
-    router1.add_interface("eth1", "10.0.12.1/24", "AA:BB:CC:01:01:02")
-    router1.add_interface("eth2", "10.0.13.1/24", "AA:BB:CC:01:01:03")
+    # Configure router interfaces for OSPF topology
+    router1.add_interface("eth0", "10.0.1.1/24", "AA:BB:CC:01:01:01")      # Host network
+    router1.add_interface("eth1", "10.0.12.1/24", "AA:BB:CC:01:01:02")     # To Router2
+    router1.add_interface("eth2", "10.0.13.1/24", "AA:BB:CC:01:01:03")     # To Router3
     
-    router2.add_interface("eth0", "10.0.12.2/24", "AA:BB:CC:02:02:01")
-    router2.add_interface("eth1", "10.0.2.1/24", "AA:BB:CC:02:02:02")
-    router2.add_interface("eth2", "10.0.24.1/24", "AA:BB:CC:02:02:03")
+    router2.add_interface("eth0", "10.0.12.2/24", "AA:BB:CC:02:02:01")     # To Router1
+    router2.add_interface("eth1", "10.0.2.1/24", "AA:BB:CC:02:02:02")      # Host network
+    router2.add_interface("eth2", "10.0.24.1/24", "AA:BB:CC:02:02:03")     # To Router4
     
-    router3.add_interface("eth0", "10.0.13.3/24", "AA:BB:CC:03:03:01")
-    router3.add_interface("eth1", "10.0.3.1/24", "AA:BB:CC:03:03:02")
-    router3.add_interface("eth2", "10.0.34.1/24", "AA:BB:CC:03:03:03")
+    router3.add_interface("eth0", "10.0.13.2/24", "AA:BB:CC:03:03:01")     # To Router1
+    router3.add_interface("eth1", "10.0.3.1/24", "AA:BB:CC:03:03:02")      # Host network
+    router3.add_interface("eth2", "10.0.34.1/24", "AA:BB:CC:03:03:03")     # To Router4
     
-    router4.add_interface("eth0", "10.0.24.4/24", "AA:BB:CC:04:04:01")
-    router4.add_interface("eth1", "10.0.34.4/24", "AA:BB:CC:04:04:02")
-    router4.add_interface("eth2", "10.0.4.1/24", "AA:BB:CC:04:04:03")
+    router4.add_interface("eth0", "10.0.24.2/24", "AA:BB:CC:04:04:01")     # To Router2
+    router4.add_interface("eth1", "10.0.34.2/24", "AA:BB:CC:04:04:02")     # To Router3
+    router4.add_interface("eth2", "10.0.4.1/24", "AA:BB:CC:04:04:03")      # Host network
     
     # Configure hosts
     host1.set_ip("10.0.1.10/24", "10.0.1.1")
-    host2.set_ip("10.0.4.10/24", "10.0.4.1")
+    host2.set_ip("10.0.2.10/24", "10.0.2.1")
+    host3.set_ip("10.0.3.10/24", "10.0.3.1")
+    host4.set_ip("10.0.4.10/24", "10.0.4.1")
     
     # Connect devices to routers
     router1.connect_device("eth0", host1)
@@ -276,73 +286,279 @@ def test_dynamic_routing():
     router1.connect_device("eth2", router3)
     
     router2.connect_device("eth0", router1)
+    router2.connect_device("eth1", host2)
     router2.connect_device("eth2", router4)
     
     router3.connect_device("eth0", router1)
+    router3.connect_device("eth1", host3)
     router3.connect_device("eth2", router4)
     
     router4.connect_device("eth0", router2)
     router4.connect_device("eth1", router3)
-    router4.connect_device("eth2", host2)
+    router4.connect_device("eth2", host4)
     
-    # Initialize RIP on routers
-    router1_rip = RIP(router1)
-    router2_rip = RIP(router2)
-    router3_rip = RIP(router3)
-    router4_rip = RIP(router4)
+    # Initialize OSPF on all routers
+    ospf1 = OSPF(router1, area=0)
+    ospf2 = OSPF(router2, area=0)
+    ospf3 = OSPF(router3, area=0)
+    ospf4 = OSPF(router4, area=0)
     
-    # Start RIP protocol
-    router1_rip.start(network)
-    router2_rip.start(network)
-    router3_rip.start(network)
-    router4_rip.start(network)
+    # Start OSPF protocol
+    print("\n--- Starting OSPF Protocol ---")
+    ospf1.start(network)
+    ospf2.start(network)
+    ospf3.start(network)
+    ospf4.start(network)
     
-    # Simulate route exchange (would happen over time in a real network)
-    # First round - directly connected networks
-    print("\n--- Round 1: Initial RIP Updates ---")
-    router2.process_rip_update(router1.name, "10.0.1.0", "255.255.255.0", 1)
-    router3.process_rip_update(router1.name, "10.0.1.0", "255.255.255.0", 1)
-    
-    router1.process_rip_update(router2.name, "10.0.2.0", "255.255.255.0", 1)
-    router1.process_rip_update(router2.name, "10.0.24.0", "255.255.255.0", 1)
-    
-    router1.process_rip_update(router3.name, "10.0.3.0", "255.255.255.0", 1)
-    router1.process_rip_update(router3.name, "10.0.34.0", "255.255.255.0", 1)
-    
-    router2.process_rip_update(router4.name, "10.0.4.0", "255.255.255.0", 1)
-    router3.process_rip_update(router4.name, "10.0.4.0", "255.255.255.0", 1)
-    
-    # Second round - propagate routes
-    print("\n--- Round 2: Propagating Routes ---")
-    router3.process_rip_update(router1.name, "10.0.2.0", "255.255.255.0", 2)
-    router3.process_rip_update(router1.name, "10.0.24.0", "255.255.255.0", 2)
-    
-    router2.process_rip_update(router1.name, "10.0.3.0", "255.255.255.0", 2)
-    router2.process_rip_update(router1.name, "10.0.34.0", "255.255.255.0", 2)
-    
-    router1.process_rip_update(router2.name, "10.0.4.0", "255.255.255.0", 2)
-    router1.process_rip_update(router3.name, "10.0.4.0", "255.255.255.0", 2)
-    
-    # Display routing tables
+    # Display routing tables after OSPF convergence
+    print("\n--- Routing Tables After OSPF Convergence ---")
     router1.print_routing_table()
     router2.print_routing_table()
     router3.print_routing_table()
     router4.print_routing_table()
     
-    # Test packet forwarding
-    print("\n--- Testing Packet Forwarding with RIP ---")
-    # Host1 sends data to Host2 (across multiple routers)
-    host1.send_packet("10.0.4.10", "Hello from Host1 to Host2 via RIP routes", network)
+    # Test packet forwarding with OSPF routes
+    print("\n--- Testing Packet Forwarding with OSPF ---")
+    host1.send_packet("10.0.4.10", "Hello from Host1 to Host4 via OSPF routes", network)
+    host2.send_packet("10.0.3.10", "Hello from Host2 to Host3 via OSPF routes", network)
     
-    # Visualize network
-    devices = [router1, router2, router3, router4, host1, host2]
+    # Visualize OSPF network
+    devices = [router1, router2, router3, router4, host1, host2, host3, host4]
     connections = [
         (router1, host1), (router1, router2), (router1, router3),
-        (router2, router4), (router3, router4), (router4, host2)
+        (router2, host2), (router2, router4),
+        (router3, host3), (router3, router4),
+        (router4, host4)
     ]
-    visualize_network(devices, connections, "Network Layer: RIP Dynamic Routing")
+    visualize_network(devices, connections, "Network Layer: OSPF Dynamic Routing")
     
-    print("Network Layer RIP Dynamic Routing Test Completed")
+    print("OSPF Dynamic Routing Test Completed")
+
+
+def test_transport_layer():
+    """Test Transport Layer functionalities"""
+    print("\n--- Testing Transport Layer ---")
+    
+    # Initialize transport layer
+    transport = TransportLayer()
+    
+    # Test port management
+    print("\n1. Testing Port Management:")
+    http_port = transport.get_service_port("HTTP")
+    ftp_port = transport.get_service_port("FTP")
+    telnet_port = transport.get_service_port("TELNET")
+    
+    print(f"Well-known ports - HTTP: {http_port}, FTP: {ftp_port}, Telnet: {telnet_port}")
+    
+    # Create TCP socket
+    print("\n2. Testing TCP Socket:")
+    tcp_socket = transport.create_socket("TCP")
+    tcp_socket.bind(8080)
+    tcp_socket.connect("192.168.1.100", 80)
+    
+    # Test Go-Back-N protocol
+    print("\n3. Testing Go-Back-N Protocol:")
+    tcp_socket.set_sliding_window_protocol("go_back_n", window_size=3)
+    test_data = "This is a test message for Go-Back-N sliding window protocol demonstration."
+    tcp_socket.send(test_data)
+    
+    # Create another socket for Selective Repeat
+    print("\n4. Testing Selective Repeat Protocol:")
+    tcp_socket2 = transport.create_socket("TCP")
+    tcp_socket2.bind(8081)
+    tcp_socket2.connect("192.168.1.101", 80)
+    tcp_socket2.set_sliding_window_protocol("selective_repeat", window_size=4)
+    tcp_socket2.send("Testing Selective Repeat protocol with different data chunks.")
+    
+    # Test UDP socket
+    print("\n5. Testing UDP Socket:")
+    udp_socket = transport.create_socket("UDP")
+    udp_socket.sendto("UDP test message", ("192.168.1.102", 53))
+    
+    # Print port allocation status
+    transport.print_port_allocation()
+    
+    # Clean up
+    tcp_socket.close()
+    tcp_socket2.close()
+    
+    print("Transport Layer Test Completed")
+
+def test_application_layer():
+    """Test Application Layer functionalities"""
+    print("\n--- Testing Application Layer ---")
+    
+    # Initialize layers
+    transport = TransportLayer()
+    application = ApplicationLayer(transport)
+    
+    print(f"Available protocols: {application.list_available_protocols()}")
+    
+    # Test HTTP protocol
+    print("\n1. Testing HTTP Protocol:")
+    print("Starting HTTP server...")
+    http_server = threading.Thread(target=application.start_server, args=("HTTP", 8080))
+    http_server.daemon = True
+    http_server.start()
+    
+    time.sleep(1)  # Wait for server to start
+    
+    print("Starting HTTP client...")
+    application.start_client("HTTP", "localhost", 8080)
+    
+    # Test FTP protocol
+    print("\n2. Testing FTP Protocol:")
+    print("Starting FTP server...")
+    ftp_server = threading.Thread(target=application.start_server, args=("FTP", 2121))
+    ftp_server.daemon = True
+    ftp_server.start()
+    
+    time.sleep(1)
+    
+    print("Starting FTP client...")
+    application.start_client("FTP", "localhost", 2121)
+    
+    # Test Telnet protocol
+    print("\n3. Testing Telnet Protocol:")
+    print("Starting Telnet server...")
+    telnet_server = threading.Thread(target=application.start_server, args=("TELNET", 2323))
+    telnet_server.daemon = True
+    telnet_server.start()
+    
+    time.sleep(1)
+    
+    print("Starting Telnet client...")
+    application.start_client("TELNET", "localhost", 2323)
+    
+    print("Application Layer Test Completed")
+
+def test_encapsulation_decapsulation():
+    """Test end-to-end encapsulation and decapsulation"""
+    print("\n--- Testing Complete Protocol Stack with Encapsulation ---")
+    
+    # Create network
+    network = Network()
+    
+    # Initialize all layers
+    transport = TransportLayer()
+    application = ApplicationLayer(transport)
+    
+    # Create network devices with all layer support
+    print("1. Creating network devices with protocol stack support...")
+    
+    # Create enhanced network device
+    class ProtocolStackDevice:
+        def __init__(self, name, mac_address, ip_address):
+            self.name = name
+            self.mac_address = mac_address
+            self.ip_address = ip_address
+            self.transport_layer = TransportLayer()
+            self.application_layer = ApplicationLayer(self.transport_layer)
+            
+        def send_application_data(self, dest_ip, protocol, data):
+            """Demonstrate encapsulation process"""
+            print(f"\n--- Encapsulation Process from {self.name} ---")
+            
+            # Application Layer
+            print(f"5. Application Layer: {protocol} data: '{data}'")
+            app_header = f"[{protocol}] "
+            app_pdu = app_header + data
+            
+            # Transport Layer
+            src_port = self.transport_layer.port_manager.allocate_ephemeral_port()
+            dest_port = self.transport_layer.get_service_port(protocol)
+            print(f"4. Transport Layer: Adding TCP header (Src:{src_port}, Dst:{dest_port})")
+            transport_header = f"[TCP:{src_port}->{dest_port}] "
+            transport_pdu = transport_header + app_pdu
+            
+            # Network Layer  
+            print(f"3. Network Layer: Adding IP header (Src:{self.ip_address}, Dst:{dest_ip})")
+            network_header = f"[IP:{self.ip_address}->{dest_ip}] "
+            network_pdu = network_header + transport_pdu
+            
+            # Data Link Layer
+            print(f"2. Data Link Layer: Adding Ethernet header (Src:{self.mac_address})")
+            datalink_header = f"[ETH:{self.mac_address}] "
+            datalink_pdu = datalink_header + network_pdu
+            
+            # Physical Layer
+            print(f"1. Physical Layer: Converting to bits and transmitting")
+            physical_bits = f"[BITS] {datalink_pdu}"
+            
+            print(f"\nFinal transmitted frame: {physical_bits}")
+            return physical_bits
+        
+        def receive_frame(self, frame):
+            """Demonstrate decapsulation process"""
+            print(f"\n--- Decapsulation Process at {self.name} ---")
+            
+            # Physical Layer
+            print(f"1. Physical Layer: Received bits, converting to frame")
+            datalink_frame = frame.replace("[BITS] ", "")
+            
+            # Data Link Layer
+            print(f"2. Data Link Layer: Processing Ethernet header, extracting payload")
+            network_packet = datalink_frame.split("[ETH:", 1)[1].split("] ", 1)[1]
+            
+            # Network Layer
+            print(f"3. Network Layer: Processing IP header, extracting payload")
+            transport_segment = network_packet.split("[IP:", 1)[1].split("] ", 1)[1]
+            
+            # Transport Layer
+            print(f"4. Transport Layer: Processing TCP header, extracting payload")
+            app_data = transport_segment.split("[TCP:", 1)[1].split("] ", 1)[1]
+            
+            # Application Layer
+            print(f"5. Application Layer: Processing application data")
+            protocol = app_data.split("] ", 1)[0].replace("[", "")
+            final_data = app_data.split("] ", 1)[1]
+            
+            print(f"Final received data: '{final_data}' via {protocol}")
+            return final_data
+    
+    # Create devices
+    client = ProtocolStackDevice("Client", "AA:BB:CC:11:11:11", "192.168.1.10")
+    server = ProtocolStackDevice("Server", "AA:BB:CC:22:22:22", "192.168.1.20")
+    
+    network.add_device(client)
+    network.add_device(server)
+    
+    # Test different application protocols with encapsulation
+    test_scenarios = [
+        ("HTTP", "GET /index.html HTTP/1.1"),
+        ("FTP", "LIST /home/user"),
+        ("TELNET", "ls -la"),
+        ("SMTP", "MAIL FROM:<test@example.com>")
+    ]
+    
+    for protocol, data in test_scenarios:
+        print(f"\n{'='*60}")
+        print(f"Testing {protocol} Protocol Stack")
+        print(f"{'='*60}")
+        
+        # Send data with encapsulation
+        transmitted_frame = client.send_application_data("192.168.1.20", protocol, data)
+        
+        # Simulate network transmission delay
+        time.sleep(0.5)
+        
+        # Receive and decapsulate data
+        received_data = server.receive_frame(transmitted_frame)
+        
+        print(f"\nTransmission successful: '{data}' -> '{received_data}'")
+        
+        # Demonstrate sliding window if TCP
+        if protocol in ["HTTP", "FTP", "TELNET", "SMTP"]:
+            print(f"\nDemonstrating sliding window for {protocol}:")
+            tcp_socket = client.transport_layer.create_socket("TCP")
+            tcp_socket.connect("192.168.1.20", client.transport_layer.get_service_port(protocol))
+            tcp_socket.set_sliding_window_protocol("go_back_n", window_size=3)
+            tcp_socket.send(f"Large data transmission for {protocol}: " + "X" * 200)
+            tcp_socket.close()
+    
+    print("\n" + "="*60)
+    print("Complete Protocol Stack Test Completed Successfully!")
+    print("="*60)
 
 def main():
     print("Network Simulator")
@@ -351,8 +567,11 @@ def main():
     # Uncomment the tests you want to run
     # test_physical_layer()
     # test_data_link_layer()
-    test_network_layer()
-    test_dynamic_routing()
+    # test_network_layer()
+    # test_ospf_routing()
+    test_transport_layer()
+    test_application_layer()
+    test_encapsulation_decapsulation()
 
 if __name__ == "__main__":
     main()

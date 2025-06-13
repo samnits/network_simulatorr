@@ -34,3 +34,11 @@ class Connection:
     def transmit(self, sender, data):
         receiver = self.device1 if sender == self.device2 else self.device2
         receiver.receive_data(data)
+
+def transmit_signal(self, data):
+    print(f"Physical: Transmitting signal: {data[:50]}...")
+    return True
+    
+def receive_signal(self, signal):
+    print(f"Physical: Signal received: {signal[:50]}...")
+    return signal
